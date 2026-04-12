@@ -30,6 +30,7 @@ from openhands.tools.terminal.constants import (
 )
 from openhands.tools.terminal.metadata import CmdOutputMetadata
 from openhands.tools.terminal.terminal import TerminalInterface
+from openhands.tools.terminal.terminal.interface import parse_ctrl_key
 
 
 logger = get_logger(__name__)
@@ -341,7 +342,7 @@ class SubprocessTerminal(TerminalInterface):
           - Plain text
           - Ctrl sequences: 'C-a'..'C-z' (Ctrl+C sends ^C byte)
           - Special names: 'ENTER','TAB','BS','ESC','UP','DOWN','LEFT','RIGHT',
-                           'HOME','END','PGUP','PGDN','C-L','C-D'
+                           'HOME','END','PGUP','PGDN','C-L','C-D','C-C'
 
         For multi-line commands exceeding _MULTILINE_THRESHOLD lines, sends
         line-by-line with pacing to prevent overwhelming the shell's input
@@ -365,6 +366,7 @@ class SubprocessTerminal(TerminalInterface):
             "PGDN": b"\x1b[6~",
             "C-L": b"\x0c",  # Ctrl+L
             "C-D": b"\x04",  # Ctrl+D (EOF)
+            "C-C": b"\x03",  # Ctrl+C (SIGINT)
         }
 
         upper = text.upper().strip()
@@ -375,15 +377,13 @@ class SubprocessTerminal(TerminalInterface):
             payload = specials[upper]
             # Do NOT auto-append another EOL; special already includes it when needed.
             append_eol = False
-        # Generic Ctrl-<letter>, including C-C (preferred over sending SIGINT directly)
-        elif upper.startswith(("C-", "CTRL-", "CTRL+")):
-            # last char after dash/plus is the key
-            key = upper.split("-", 1)[-1].split("+", 1)[-1]
-            if len(key) == 1 and "A" <= key <= "Z":
-                payload = bytes([ord(key) & 0x1F])
-            else:
-                # Unknown form; fall back to raw text
-                payload = text.encode("utf-8", "ignore")
+        # Generic Ctrl-<letter>
+        elif parse_ctrl_key(text) is not None:
+            ctrl = parse_ctrl_key(text)
+            assert ctrl is not None
+            # ctrl is "C-x" — extract the letter
+            key_char = ctrl[-1].upper()
+            payload = bytes([ord(key_char) & 0x1F])
             append_eol = False  # ctrl combos are "instant"
         else:
             # Check if this is a long multi-line command that needs chunked sending
