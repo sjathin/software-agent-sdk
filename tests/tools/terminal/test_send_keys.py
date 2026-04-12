@@ -1,5 +1,10 @@
 """Tests for standardized send_keys special key handling."""
 
+import platform
+import shutil
+import tempfile
+import time
+
 import pytest
 
 from openhands.tools.terminal.terminal.interface import (
@@ -29,12 +34,12 @@ def test_parse_ctrl_key_valid(text: str, expected: str) -> None:
 @pytest.mark.parametrize(
     "text",
     [
-        "C-",  # no letter
-        "C-ab",  # two letters
-        "C-1",  # digit
-        "hello",  # plain text
-        "CTRL-",  # no letter
-        "CTRL+12",  # not single letter
+        "C-",
+        "C-ab",
+        "C-1",
+        "hello",
+        "CTRL-",
+        "CTRL+12",
     ],
 )
 def test_parse_ctrl_key_invalid(text: str) -> None:
@@ -53,10 +58,8 @@ def test_supported_special_keys_contains_essentials() -> None:
 
 
 @pytest.fixture
-def subprocess_terminal(tmp_path):
+def subprocess_terminal():
     """Create a real SubprocessTerminal for send_keys testing."""
-    import platform
-
     if platform.system() == "Windows":
         pytest.skip("SubprocessTerminal not available on Windows")
 
@@ -64,15 +67,15 @@ def subprocess_terminal(tmp_path):
         SubprocessTerminal,
     )
 
-    term = SubprocessTerminal(work_dir=str(tmp_path))
-    term.initialize()
-    yield term
-    term.close()
+    with tempfile.TemporaryDirectory() as tmpdir:
+        term = SubprocessTerminal(work_dir=tmpdir)
+        term.initialize()
+        yield term
+        term.close()
 
 
 def test_subprocess_send_keys_ctrl_c(subprocess_terminal) -> None:
     """C-c should be recognized as a special key (not sent as literal text)."""
-    # Should not raise; just verify it dispatches without error
     subprocess_terminal.send_keys("C-c")
 
 
@@ -91,11 +94,8 @@ def test_subprocess_send_keys_ctrl_variants(subprocess_terminal) -> None:
 
 
 @pytest.fixture
-def tmux_terminal(tmp_path):
+def tmux_terminal():
     """Create a real TmuxTerminal for send_keys testing."""
-    import platform
-    import shutil
-
     if platform.system() == "Windows":
         pytest.skip("TmuxTerminal not available on Windows")
     if shutil.which("tmux") is None:
@@ -103,10 +103,11 @@ def tmux_terminal(tmp_path):
 
     from openhands.tools.terminal.terminal.tmux_terminal import TmuxTerminal
 
-    term = TmuxTerminal(work_dir=str(tmp_path))
-    term.initialize()
-    yield term
-    term.close()
+    with tempfile.TemporaryDirectory() as tmpdir:
+        term = TmuxTerminal(work_dir=tmpdir)
+        term.initialize()
+        yield term
+        term.close()
 
 
 def test_tmux_send_keys_ctrl_c(tmux_terminal) -> None:
@@ -126,8 +127,6 @@ def test_tmux_send_keys_ctrl_variants(tmux_terminal) -> None:
 
 def test_tmux_send_keys_plain_text(tmux_terminal) -> None:
     """Plain text should be sent literally (not interpreted as a key name)."""
-    import time
-
     tmux_terminal.send_keys("echo hello_world")
     time.sleep(0.3)
     screen = tmux_terminal.read_screen()
